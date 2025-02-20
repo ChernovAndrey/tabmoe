@@ -1,0 +1,79 @@
+# =========================================
+# 🔹 General System Files
+# =========================================
+.DS_Store          # macOS system file
+Thumbs.db         # Windows thumbnail cache
+ehthumbs.db       # Windows Explorer cache
+*.swp             # Vim swap files
+*.swo             # Vim swap files
+*.swn             # Vim swap files
+*.bak             # Backup files
+
+# =========================================
+# 🔹 Python Files and Build Artifacts
+# =========================================
+__pycache__/      # Compiled Python files
+*.pyc             # Compiled Python files
+*.pyo             # Compiled Python files
+*.pyd             # Compiled Python files
+*.pdb             # Debug files
+*.so              # Shared object files
+*.egg-info/       # Setuptools metadata
+*.egg             # Egg files
+dist/             # Build directory
+build/            # Build artifacts
+pip-wheel-metadata/  # Wheel metadata
+*.manifest        # Windows manifest files
+
+# =========================================
+# 🔹 Virtual Environments
+# =========================================
+.venv/            # Local virtualenv
+env/              # Alternative virtualenv
+venv/             # Alternative virtualenv
+
+# Poetry-managed virtual environments (if not inside the project)
+# Uncomment this if you use a global Poetry env:
+# /Users/<your-username>/Library/Caches/pypoetry/virtualenvs/
+
+# =========================================
+# 🔹 PyCharm Project Files
+# =========================================
+.idea/            # PyCharm project settings
+*.iml             # PyCharm module files
+workspace.xml     # PyCharm workspace file
+tasks.xml         # PyCharm task settings
+modules.xml       # PyCharm module settings
+shelf/            # PyCharm local history
+scratches/        # PyCharm scratch files
+
+# =========================================
+# 🔹 Jupyter Notebooks & VSCode Files
+# =========================================
+.ipynb_checkpoints/  # Jupyter notebook checkpoints
+.vscode/            # VSCode settings folder
+
+# =========================================
+# 🔹 Logs & Debug Files
+# =========================================
+logs/             # General log folder
+*.log             # Log files
+debug.log         # Debug logs
+nohup.out         # Terminal background logs
+
+# =========================================
+# 🔹 Docker & Deployment Files
+# =========================================
+docker-compose.override.yml  # Local Docker config
+.env              # Environment variables (DO NOT COMMIT SECRETS)
+.env.local        # Local override
+.env.development  # Dev env
+.env.production   # Production env
+
+# =========================================
+# 🔹 Temporary Files & Editors
+# =========================================
+*.sublime-workspace  # Sublime Text
+*.sublime-project    # Sublime Text
+*.tmp             # Temporary files
+*.~              # Temp files from editors
