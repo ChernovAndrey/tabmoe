@@ -12,7 +12,8 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler, QuantileTransfo
 from tabmoe.enums.utils import validate_enum
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
-from typing import Optional
+from tabmoe.utils.binary_encoder import BinaryEncoder
+from typing import Optional, Tuple
 from tabmoe.enums.data_processing import TaskType, FeatureType, NumPolicy, EmbeddingPolicy
 import rtdl_num_embeddings
 import torch
@@ -41,86 +42,94 @@ class Dataset:
         self.n_bins = n_bins
         self.seed = seed
 
-        # Store datasets
-        self.X_train, self.y_train = X_train, y_train
-        self.X_val, self.y_val = X_val, y_val
-        self.X_test, self.y_test = X_test, y_test
-
+        # # Store datasets
+        # self.X_train, self.y_train = X_train, y_train
+        # self.X_val, self.y_val = X_val, y_val
+        # self.X_test, self.y_test = X_test, y_test
+        self.y_train, self.y_val, self.y_test = y_train, y_val, y_test
         # Initialize label scaler for regression tasks
         self.label_scaler = StandardScaler() if self.task_type == TaskType.REGRESSION else None
 
         # Identify feature types
-        self.categorical_indices = [i for i, f in enumerate(self.x_types) if f == FeatureType.CATEGORICAL]
-        self.binary_indices = [i for i, f in enumerate(self.x_types) if f == FeatureType.BINARY]
-        self.numeric_indices = [i for i, f in enumerate(self.x_types) if f == FeatureType.NUMERIC]
-        print(f"numeric indices:{self.numeric_indices}")
-        # Compute bins for Piecewise Linear Embeddings if needed
-        self.bin_edges = None
-        if self.embedding_policy == EmbeddingPolicy.PIECEWISE_LINEAR_EMBEDDINGS:
-            if self.n_bins is None:
-                raise ValueError("Number of bins (`n_bins`) must be specified when using PiecewiseLinearEmbeddings.")
+        self.cat_indices = [i for i, f in enumerate(self.x_types) if f == FeatureType.CATEGORICAL]
+        self.bin_indices = [i for i, f in enumerate(self.x_types) if f == FeatureType.BINARY]
+        self.num_indices = [i for i, f in enumerate(self.x_types) if f == FeatureType.NUMERIC]
 
-            # TODO: convert to tensors everything before embeddings?
-            self.bin_edges = rtdl_num_embeddings.compute_bins(
-                torch.tensor(self.X_train[:, self.numeric_indices], dtype=torch.float32), self.n_bins)
-
-        # Define preprocessing pipeline
-        self.preprocessor = self._build_preprocessing_pipeline()
-
-    def _build_preprocessing_pipeline(self):
-        """Builds a Scikit-Learn ColumnTransformer pipeline for preprocessing."""
+        # Split features explicitly before preprocessing
+        self.X_train_num, self.X_train_cat, self.X_train_bin = self._split_data(X_train)
+        if X_val is not None:
+            self.X_val_num, self.X_val_cat, self.X_val_bin = self._split_data(X_val)
+        else:
+            self.X_val_num, self.X_val_cat, self.X_val_bin = None, None, None
+        if X_test is not None:
+            self.X_test_num, self.X_test_cat, self.X_test_bin = self._split_data(X_test)
+        else:
+            self.X_test_num, self.X_test_cat, self.X_test_bin = None, None, None
 
         # One-Hot Encoding for categorical features
-        categorical_transformer = OneHotEncoder(handle_unknown='ignore', sparse_output=False,
-                                                dtype=np.float32)  # TODO: why is sparse not expected?
-
+        self.cat_transformer = OneHotEncoder(handle_unknown='ignore', sparse_output=False,
+                                             dtype=np.float32)
         # Mapping binary features to {0,1}
-        binary_transformer = FunctionTransformer(self._map_binary_features)
+        self.bin_transformer = BinaryEncoder()
 
-        # Numerical transformation: StandardScaler or QuantileTransformer
+        # Numeric Transformer for Categorical features
         if self.num_policy == NumPolicy.STANDARD:
-            numeric_transformer = StandardScaler()
+            self.num_transformer = StandardScaler()
         elif self.num_policy == NumPolicy.NOISY_QUANTILE:
-            numeric_transformer = QuantileTransformer(
-                n_quantiles=max(min(len(self.X_train) // 30, 1000), 10),
+            self.num_transformer = QuantileTransformer(
+                n_quantiles=max(min(self.X_train_num.shape[0] // 30, 1000), 10),
                 output_distribution='normal',
                 subsample=1_000_000_000,
                 random_state=self.seed
             )
+        # for Piecewise Linear Embeddings if needed
+        self.bin_edges = None
 
-        # ColumnTransformer to apply transformations to respective columns
-        preprocessor = ColumnTransformer(transformers=[
-            ("num", numeric_transformer, self.numeric_indices),
-            ("cat", categorical_transformer, self.categorical_indices),
-            ("bin", binary_transformer, self.binary_indices),
-        ])
-
-        return Pipeline(steps=[("preprocessor", preprocessor)])
-
-    def _map_binary_features(self, X):
-        """Ensures binary features are mapped to {0,1}."""
-        for col in range(X.shape[1]):
-            unique_values = np.unique(X[:, col])
-            if len(unique_values) != 2:
-                raise ValueError(f"Binary feature at index {col} has unexpected values: {unique_values}")
-            mapping = {unique_values[0]: 0, unique_values[1]: 1}
-            X[:, col] = np.vectorize(mapping.get)(X[:, col])
-        return X
+    def _split_data(self, X) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Splits X into numerical, categorical, and binary features."""
+        X_num = np.array(X[:, self.num_indices], dtype=np.float32) if self.num_indices else None
+        X_cat = X[:, self.cat_indices] if self.cat_indices else None
+        X_bin = X[:, self.bin_indices] if self.bin_indices else None
+        return X_num, X_cat, X_bin
 
     def preprocess(self) -> None:
-        """Preprocess training, validation, and test datasets using the pipeline."""
-        # if self.num_policy == NumPolicy.NOISY_QUANTILE:  # TODO: improve clarity?, get rid of copying!
-        #     X_train_num = self.X_train[:, self.numeric_indices]
-        #     noise = np.random.normal(0.0, 1e-5, X_train_num.shape).astype(
-        #         X_train_num.dtype) if self.seed is None else \
-        #         np.random.RandomState(self.seed).normal(0.0, 1e-5, X_train_num.shape).astype(X_train_num.dtype)
-        # else:
-        #     noise = 0.0
-        self.X_train = self.preprocessor.fit_transform(self.X_train)
-        if self.X_val is not None:
-            self.X_val = self.preprocessor.transform(self.X_val)
-        if self.X_test is not None:
-            self.X_test = self.preprocessor.transform(self.X_test)
+
+        # preprocess numeric features
+        if self.num_policy == NumPolicy.NOISY_QUANTILE:
+            self.X_train_num += np.random.normal(0.0, 1e-5, self.X_train_num.shape).astype(
+                self.X_train_num.dtype) if self.seed is None else \
+                np.random.RandomState(self.seed).normal(0.0, 1e-5, self.X_train_num.shape).astype(
+                    self.X_train_num.dtype)
+
+        self.X_train_num = self.num_transformer.fit_transform(
+            self.X_train_num) if self.X_train_num is not None else None
+
+        self.X_val_num = self.num_transformer.transform(self.X_val_num) if self.X_val_num is not None else None
+        self.X_test_num = self.num_transformer.transform(self.X_test_num) if self.X_test_num is not None else None
+
+        if self.embedding_policy == EmbeddingPolicy.PIECEWISE_LINEAR_EMBEDDINGS:
+            if self.n_bins is None:
+                raise ValueError("Number of bins (`n_bins`) must be specified when using PiecewiseLinearEmbeddings.")
+
+            # TODO: move it to the model code?
+            self.bin_edges = rtdl_num_embeddings.compute_bins(
+                torch.tensor(self.X_train_num, dtype=torch.float32), self.n_bins)
+
+        # preprocess categorical features
+        self.X_train_cat = self.cat_transformer.fit_transform(
+            self.X_train_cat) if self.X_train_cat is not None else None
+
+        self.X_val_cat = self.cat_transformer.transform(self.X_val_cat) if self.X_val_cat is not None else None
+        self.X_test_cat = self.cat_transformer.transform(self.X_test_cat) if self.X_test_cat is not None else None
+
+        # preprocess binary features
+        # preprocess categorical features
+        self.X_train_bin = self.bin_transformer.fit_transform(
+            self.X_train_bin) if self.X_train_bin is not None else None
+
+        self.X_val_bin = self.cat_transformer.transform(self.X_val_bin) if self.X_val_bin is not None else None
+        self.X_test_bin = self.cat_transformer.transform(self.X_test_bin) if self.X_test_bin is not None else None
+
 
         # Standardize labels for regression
         if self.task_type == TaskType.REGRESSION:
@@ -130,16 +139,21 @@ class Dataset:
             if self.y_test is not None:
                 self.y_test = self.label_scaler.transform(self.y_test.reshape(-1, 1)).reshape(-1)
 
-    def transform(self, X_new: np.array) -> np.array:
+    def transform(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Transforms new test data using the already fitted preprocessing pipeline.
 
         Args:
-            X_new (np.array): New input data.
+            X (np.ndarray): New input data.
 
         Returns:
-            np.array: Preprocessed version of X_new.
+            np.ndarray: Preprocessed version of X_new.
         """
-        if X_new.shape[1] != len(self.x_types):
+        if X.shape[1] != len(self.x_types):
             raise ValueError("New data must have the same number of features as the training data.")
-        return self.preprocessor.transform(X_new)
+        X_num, X_cat, X_bin = self._split_data(X)
+
+        X_num = self.num_transformer.transform(X_num) if X_num is not None else None
+        X_cat = self.cat_transformer.transform(X_cat) if X_cat is not None else None
+        X_bin = self.bin_transformer.transform(X_bin) if X_bin is not None else None
+        return X_num, X_cat, X_bin
