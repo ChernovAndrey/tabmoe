@@ -42,11 +42,8 @@ class Dataset:
         self.n_bins = n_bins
         self.seed = seed
 
-        # # Store datasets
-        # self.X_train, self.y_train = X_train, y_train
-        # self.X_val, self.y_val = X_val, y_val
-        # self.X_test, self.y_test = X_test, y_test
         self.y_train, self.y_val, self.y_test = y_train, y_val, y_test
+
         # Initialize label scaler for regression tasks
         self.label_scaler = StandardScaler() if self.task_type == TaskType.REGRESSION else None
 
@@ -130,7 +127,6 @@ class Dataset:
         self.X_val_bin = self.cat_transformer.transform(self.X_val_bin) if self.X_val_bin is not None else None
         self.X_test_bin = self.cat_transformer.transform(self.X_test_bin) if self.X_test_bin is not None else None
 
-
         # Standardize labels for regression
         if self.task_type == TaskType.REGRESSION:
             self.y_train = self.label_scaler.fit_transform(self.y_train.reshape(-1, 1)).reshape(-1)
@@ -157,3 +153,30 @@ class Dataset:
         X_cat = self.cat_transformer.transform(X_cat) if X_cat is not None else None
         X_bin = self.bin_transformer.transform(X_bin) if X_bin is not None else None
         return X_num, X_cat, X_bin
+
+    @property
+    def cat_cardinalities(self) -> list[int]:
+        if self.X_train_cat is None:
+            return []
+        else:
+            return [len(np.unique(column)) for column in self.X_train_cat.T]
+
+    @property
+    def n_num_features(self) -> int:
+        return len(self.num_indices)
+
+    @property
+    def n_bin_features(self) -> int:
+        return len(self.bin_indices)
+
+    @property
+    def n_cat_features(self) -> int:
+        return len(self.cat_indices)
+
+    @property
+    def n_features(self) -> int:
+        return self.n_num_features + self.n_bin_features + self.n_cat_features
+
+    @property
+    def n_classes(self) -> None | int:
+        return None if self.task_type == TaskType.REGRESSION else np.unique(self.y_train)
