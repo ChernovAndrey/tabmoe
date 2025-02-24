@@ -4,13 +4,13 @@ from typing import Any
 
 class BaseModel(ABC):
     """
-    Abstract base class for all forecasting models.
+    Abstract base class for all forecasting modeling.
     Ensures that every model follows a common structure.
     """
 
     def __init__(self, **kwargs):
         """
-        Base constructor for models. Accepts arbitrary parameters.
+        Base constructor for modeling. Accepts arbitrary parameters.
         """
         self.params = kwargs  # Store parameters for flexibility
 

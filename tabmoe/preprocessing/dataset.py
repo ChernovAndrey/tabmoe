@@ -12,23 +12,22 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler, QuantileTransfo
 from tabmoe.enums.utils import validate_enum
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
-from tabmoe.utils.binary_encoder import BinaryEncoder
+from tabmoe.preprocessing.binary_encoder import BinaryEncoder
 from typing import Optional, Tuple
-from tabmoe.enums.data_processing import TaskType, FeatureType, NumPolicy, EmbeddingPolicy
-import rtdl_num_embeddings
+from tabmoe.enums.data_processing import TaskType, FeatureType, NumPolicy
 import torch
+from typing import Literal
 
 
 class Dataset:
     def __init__(self,
                  X_train: np.array, y_train: np.array,
-                 X_types: list[str], task_type: str,
-                 num_policy: str = "NOISY_QUANTILE",
-                 embedding_policy: str = "None",
+                 X_types: list[str], task_type: Literal['regression', 'multiclass', 'binclass'],
+                 num_policy: Literal["noisy_quantile", "standardization"] = 'noisy_quantile',
                  X_val: Optional[np.array] = None, y_val: Optional[np.array] = None,
                  X_test: Optional[np.array] = None, y_test: Optional[np.array] = None,
-                 n_bins: Optional[int] = None,
-                 seed: Optional[int] = None, ):
+                 seed: Optional[int] = None,
+                 device: None | str | torch.device = None):
         if not isinstance(X_types, list):
             raise TypeError(f"Expected a list, but got {type(X_types).__name__}")
 
@@ -38,8 +37,7 @@ class Dataset:
         self.task_type: TaskType = validate_enum(TaskType, task_type)
         self.x_types: list[FeatureType] = [validate_enum(FeatureType, value) for value in X_types]
         self.num_policy: NumPolicy = validate_enum(NumPolicy, num_policy)
-        self.embedding_policy: EmbeddingPolicy = validate_enum(EmbeddingPolicy, embedding_policy)
-        self.n_bins = n_bins
+        self.device = device
         self.seed = seed
 
         self.y_train, self.y_val, self.y_test = y_train, y_val, y_test
@@ -79,8 +77,6 @@ class Dataset:
                 subsample=1_000_000_000,
                 random_state=self.seed
             )
-        # for Piecewise Linear Embeddings if needed
-        self.bin_edges = None
 
     def _split_data(self, X) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Splits X into numerical, categorical, and binary features."""
@@ -103,14 +99,6 @@ class Dataset:
 
         self.X_val_num = self.num_transformer.transform(self.X_val_num) if self.X_val_num is not None else None
         self.X_test_num = self.num_transformer.transform(self.X_test_num) if self.X_test_num is not None else None
-
-        if self.embedding_policy == EmbeddingPolicy.PIECEWISE_LINEAR_EMBEDDINGS:
-            if self.n_bins is None:
-                raise ValueError("Number of bins (`n_bins`) must be specified when using PiecewiseLinearEmbeddings.")
-
-            # TODO: move it to the model code?
-            self.bin_edges = rtdl_num_embeddings.compute_bins(
-                torch.tensor(self.X_train_num, dtype=torch.float32), self.n_bins)
 
         # preprocess categorical features
         self.X_train_cat = self.cat_transformer.fit_transform(
@@ -135,24 +123,39 @@ class Dataset:
             if self.y_test is not None:
                 self.y_test = self.label_scaler.transform(self.y_test.reshape(-1, 1)).reshape(-1)
 
-    def transform(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        self._to_torch(self.device)
+        print('preprocessing is finished; data was converted to torch.tensor')
+
+    def transform(self, X: np.ndarray) -> Tuple[torch.tensor, torch.tensor, torch.tensor]:
         """
-        Transforms new test data using the already fitted preprocessing pipeline.
+        Transforms new test preprocessing using the already fitted preprocessing pipeline.
 
         Args:
-            X (np.ndarray): New input data.
+            X (np.ndarray): New input preprocessing.
 
         Returns:
             np.ndarray: Preprocessed version of X_new.
         """
         if X.shape[1] != len(self.x_types):
-            raise ValueError("New data must have the same number of features as the training data.")
+            raise ValueError("New preprocessing must have the same number of features as the training preprocessing.")
         X_num, X_cat, X_bin = self._split_data(X)
 
         X_num = self.num_transformer.transform(X_num) if X_num is not None else None
         X_cat = self.cat_transformer.transform(X_cat) if X_cat is not None else None
         X_bin = self.bin_transformer.transform(X_bin) if X_bin is not None else None
-        return X_num, X_cat, X_bin
+
+        return torch.tensor(X_num, dtype=torch.float32, device=self.device), \
+            torch.tensor(X_cat, dtype=torch.float32, device=self.device), \
+            torch.tensor(X_bin, dtype=torch.float32, device=self.device)
+
+    def _to_torch(self, device: None | str | torch.device) -> None:
+        for attr in ["X_train_num", "X_train_cat", "X_train_bin",
+                     "X_val_num", "X_val_cat", "X_val_bin",
+                     "X_test_num", "X_test_cat", "X_test_bin",
+                     "y_train", "y_val", "y_test"]:
+            setattr(self, attr,
+                    torch.tensor(getattr(self, attr), dtype=torch.float32, device=device)
+                    if getattr(self, attr) is not None else None)
 
     @property
     def cat_cardinalities(self) -> list[int]:

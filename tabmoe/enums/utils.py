@@ -4,7 +4,7 @@ from typing import Type, TypeVar, Optional
 T = TypeVar("T", bound=Enum)
 
 
-def validate_enum(enum_class: Type[T], value: str) -> Optional[T]:
+def validate_enum(enum_class: Type[T], value: str) -> T:
     """
     Validates whether a given value (case-insensitive) is a valid member of the specified Enum.
 
@@ -25,5 +25,4 @@ def validate_enum(enum_class: Type[T], value: str) -> Optional[T]:
         return enum_map[value]
 
     valid_values = ", ".join(e.value for e in enum_class)
-    print(f"❌ '{value}' is NOT a valid {enum_class.__name__}. Valid options: {valid_values}")
-    return None
+    raise ValueError(f"❌ '{value}' is NOT a valid {enum_class.__name__}. Valid options: {valid_values}")

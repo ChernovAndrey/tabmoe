@@ -15,10 +15,5 @@ class FeatureType(Enum):
 
 class NumPolicy(Enum):
     # preprocessing policies for numerical features
-    STANDARD = "standard"
+    STANDARD = "standardization"
     NOISY_QUANTILE = "noisy_quantile"
-
-
-class EmbeddingPolicy(Enum):
-    NONE = "none"
-    PIECEWISE_LINEAR_EMBEDDINGS = "piecewise_linear_embeddings"
