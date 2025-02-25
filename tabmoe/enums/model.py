@@ -1,4 +1,3 @@
-#TODO: add gating type
 from enum import Enum
 
 class EmbeddingPolicy(Enum):

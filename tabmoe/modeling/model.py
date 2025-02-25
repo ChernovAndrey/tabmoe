@@ -4,11 +4,13 @@ from torch import Tensor
 from typing import Literal
 import rtdl_num_embeddings
 
-from .embeddings import PiecewiseLinearEmbeddings
 from tabmoe.preprocessing.dataset import Dataset
 from tabmoe.enums.utils import validate_enum
 from tabmoe.enums.model import GatingType, EmbeddingPolicy
+from tabmoe.utils.device import is_dataparallel_available
+
 from .backbones import get_model_instance
+from .embeddings import PiecewiseLinearEmbeddings
 
 
 class Model(nn.Module):
@@ -36,6 +38,7 @@ class Model(nn.Module):
 
         super().__init__()
         self.dataset = dataset
+
         if num_embeddings is not None:
             self.num_embedding_policy = validate_enum(EmbeddingPolicy, num_embeddings.get('type', None))
         else:
@@ -76,12 +79,16 @@ class Model(nn.Module):
         print(f'binary dimension:{self.d_bin}')
         print(f'total dimension:{self.d_total}')
 
-
         assert self.d_total > 0, 'All d_num, d_cat and d_bin are zero, at least one should be positive'
 
         self.d_out = 1 if self.n_classes is None else self.n_classes
 
         self.backbone = get_model_instance(**backbone, d_in=self.d_total, d_out=self.d_out)
+
+        if is_dataparallel_available():
+            self.to(self.dataset.device)  # TODO: it was never tested, but it should work :)
+        else:
+            self.to(self.dataset.device)
 
     def forward(
             self, x_num: None | Tensor = None, x_cat: None | Tensor = None, x_bin: None | Tensor = None,

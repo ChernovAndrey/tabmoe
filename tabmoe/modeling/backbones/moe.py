@@ -2,7 +2,7 @@ import torch
 from torch import nn, Tensor
 from torch.nn import functional as F
 
-from tabmoe.modeling.utils import init_rsqrt_uniform_ # TODO: could be a local import?
+from .utils import init_rsqrt_uniform_
 
 class GumbelGatingNetwork(nn.Module):
     """
