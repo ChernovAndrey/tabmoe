@@ -112,8 +112,8 @@ class Dataset:
         self.X_train_bin = self.bin_transformer.fit_transform(
             self.X_train_bin) if self.X_train_bin is not None else None
 
-        self.X_val_bin = self.cat_transformer.transform(self.X_val_bin) if self.X_val_bin is not None else None
-        self.X_test_bin = self.cat_transformer.transform(self.X_test_bin) if self.X_test_bin is not None else None
+        self.X_val_bin = self.bin_transformer.transform(self.X_val_bin) if self.X_val_bin is not None else None
+        self.X_test_bin = self.bin_transformer.transform(self.X_test_bin) if self.X_test_bin is not None else None
 
         # Standardize labels for regression
         if self.task_type == TaskType.REGRESSION:
@@ -126,7 +126,7 @@ class Dataset:
         self._to_torch(self.device)
         print('preprocessing is finished; data was converted to torch.tensor')
 
-    def transform(self, X: np.ndarray) -> Tuple[torch.tensor, torch.tensor, torch.tensor]:
+    def transform(self, X: np.ndarray, device: None | str | torch.device) -> Tuple[torch.tensor, torch.tensor, torch.tensor]:
         """
         Transforms new test preprocessing using the already fitted preprocessing pipeline.
 
@@ -144,9 +144,11 @@ class Dataset:
         X_cat = self.cat_transformer.transform(X_cat) if X_cat is not None else None
         X_bin = self.bin_transformer.transform(X_bin) if X_bin is not None else None
 
-        return torch.tensor(X_num, dtype=torch.float32, device=self.device), \
-            torch.tensor(X_cat, dtype=torch.float32, device=self.device), \
-            torch.tensor(X_bin, dtype=torch.float32, device=self.device)
+        if device is None:
+            device = self.device
+        return torch.tensor(X_num, dtype=torch.float32, device=device), \
+            torch.tensor(X_cat, dtype=torch.float32, device=device), \
+            torch.tensor(X_bin, dtype=torch.float32, device=device)
 
     def _to_torch(self, device: None | str | torch.device) -> None:
         for attr in ["X_train_num", "X_train_cat", "X_train_bin",
@@ -157,12 +159,6 @@ class Dataset:
                     torch.tensor(getattr(self, attr), dtype=torch.float32, device=device)
                     if getattr(self, attr) is not None else None)
 
-    @property
-    def cat_cardinalities(self) -> list[int]:
-        if self.X_train_cat is None:
-            return []
-        else:
-            return [len(np.unique(column)) for column in self.X_train_cat.T]
 
     @property
     def n_num_features(self) -> int:
@@ -175,6 +171,13 @@ class Dataset:
     @property
     def n_cat_features(self) -> int:
         return len(self.cat_indices)
+
+    @property
+    def n_encoded_cat_features(self) -> int:
+        if self.X_train_cat is None:
+            return 0
+        else:
+            return self.X_train_cat.shape[1]
 
     @property
     def n_features(self) -> int:
