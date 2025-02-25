@@ -1,22 +1,12 @@
-import enum
-import hashlib
-import json
-import pickle
-from collections.abc import Iterable
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Generic, TypeVar, cast
-import numpy as np
-from sklearn.preprocessing import OneHotEncoder, StandardScaler, QuantileTransformer, FunctionTransformer
-# from loguru import logger
-from tabmoe.enums.utils import validate_enum
-from sklearn.pipeline import Pipeline
-from sklearn.compose import ColumnTransformer
-from tabmoe.preprocessing.binary_encoder import BinaryEncoder
-from typing import Optional, Tuple
-from tabmoe.enums.data_processing import TaskType, FeatureType, NumPolicy
 import torch
-from typing import Literal
+import numpy as np
+from typing import Literal, Optional, Tuple
+from sklearn.preprocessing import OneHotEncoder, StandardScaler, QuantileTransformer
+
+from tabmoe.enums.utils import validate_enum
+from tabmoe.enums.data_processing import TaskType, FeatureType, NumPolicy
+from tabmoe.preprocessing.binary_encoder import BinaryEncoder
+from tabmoe.utils.device import get_device
 
 
 class Dataset:
@@ -37,7 +27,8 @@ class Dataset:
         self.task_type: TaskType = validate_enum(TaskType, task_type)
         self.x_types: list[FeatureType] = [validate_enum(FeatureType, value) for value in X_types]
         self.num_policy: NumPolicy = validate_enum(NumPolicy, num_policy)
-        self.device = device
+        self.device = get_device() if device is None else device
+        print(f'device:{self.device}')
         self.seed = seed
 
         self.y_train, self.y_val, self.y_test = y_train, y_val, y_test
@@ -126,7 +117,8 @@ class Dataset:
         self._to_torch(self.device)
         print('preprocessing is finished; data was converted to torch.tensor')
 
-    def transform(self, X: np.ndarray, device: None | str | torch.device) -> Tuple[torch.tensor, torch.tensor, torch.tensor]:
+    def transform(self, X: np.ndarray, device: None | str | torch.device = None) -> Tuple[
+        torch.tensor, torch.tensor, torch.tensor]:
         """
         Transforms new test preprocessing using the already fitted preprocessing pipeline.
 
@@ -158,7 +150,6 @@ class Dataset:
             setattr(self, attr,
                     torch.tensor(getattr(self, attr), dtype=torch.float32, device=device)
                     if getattr(self, attr) is not None else None)
-
 
     @property
     def n_num_features(self) -> int:
