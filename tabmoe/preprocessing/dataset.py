@@ -34,7 +34,7 @@ class Dataset:
         self.y_train, self.y_val, self.y_test = y_train, y_val, y_test
 
         # Initialize label scaler for regression tasks
-        self.label_scaler = StandardScaler() if self.task_type == TaskType.REGRESSION else None
+        self.label_scaler = StandardScaler() if self.is_regression else None
 
         # Identify feature types
         self.cat_indices = [i for i, f in enumerate(self.x_types) if f == FeatureType.CATEGORICAL]
@@ -107,7 +107,7 @@ class Dataset:
         self.X_test_bin = self.bin_transformer.transform(self.X_test_bin) if self.X_test_bin is not None else None
 
         # Standardize labels for regression
-        if self.task_type == TaskType.REGRESSION:
+        if self.is_regression:
             self.y_train = self.label_scaler.fit_transform(self.y_train.reshape(-1, 1)).reshape(-1)
             if self.y_val is not None:
                 self.y_val = self.label_scaler.transform(self.y_val.reshape(-1, 1)).reshape(-1)
@@ -177,3 +177,7 @@ class Dataset:
     @property
     def n_classes(self) -> None | int:
         return None if self.task_type == TaskType.REGRESSION else np.unique(self.y_train)
+
+    @property
+    def is_regression(self) -> bool:
+        return self.task_type == TaskType.REGRESSION

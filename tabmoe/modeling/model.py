@@ -21,7 +21,7 @@ class Model(nn.Module):
             *,
             dataset: Dataset,
 
-            backbone: dict,
+            backbone_parameters: dict,
             num_embeddings: None | dict = None,  # Embedding type
             gating_type: Literal['standard', 'gumbel'] = 'gumbel'
     ) -> None:
@@ -34,10 +34,24 @@ class Model(nn.Module):
         :param gating_type:
         """
 
-        assert backbone.get('type', None), "Backbone dictionary must have a key 'type'"
+        assert backbone_parameters.get('type', None), "backbone_parameters dictionary must have a 'type' key"
 
         super().__init__()
         self.dataset = dataset
+
+        # Use it with caution; there is no need to use AMP on small datasets.
+        self.amp_dtype = (
+            torch.bfloat16
+            if amp
+               and torch.cuda.is_available()
+               and torch.cuda.is_bf16_supported()
+            else None
+        )
+        self.amp_enabled = self.amp_dtype is not None
+
+        # For FP16, the gradient scaler must be used.
+        print(f'AMP enabled: {self.amp_enabled}')
+
 
         if num_embeddings is not None:
             self.num_embedding_policy = validate_enum(EmbeddingPolicy, num_embeddings.get('type', None))
@@ -81,14 +95,20 @@ class Model(nn.Module):
 
         assert self.d_total > 0, 'All d_num, d_cat and d_bin are zero, at least one should be positive'
 
-        self.d_out = 1 if self.n_classes is None else self.n_classes
+        self.d_out = 1 if self.n_classes is None else self.n_classes  # TODO: for binary classification make one output
 
-        self.backbone = get_model_instance(**backbone, d_in=self.d_total, d_out=self.d_out)
+        self.backbone = get_model_instance(**backbone_parameters, d_in=self.d_total, d_out=self.d_out)
 
         if is_dataparallel_available():
             self.to(self.dataset.device)  # TODO: it was never tested, but it should work :)
         else:
             self.to(self.dataset.device)
+
+    def apply_model(self, X_num: torch.Tensor, X_cat: torch.Tensor, X_bin: torch.Tensor,
+                    num_samples: int = 1, return_average: bool = True, ) -> Tensor:
+        with torch.autocast(self.model.dataset.device, enabled=self.amp_enabled, dtype=self.amp_dtype):
+            return self.model(X_num, X_cat, X_bin, num_samples, return_average) \
+                .squeeze(-1).float()  # Remove the last dimension for regression predictions.
 
     def forward(
             self, x_num: None | Tensor = None, x_cat: None | Tensor = None, x_bin: None | Tensor = None,
