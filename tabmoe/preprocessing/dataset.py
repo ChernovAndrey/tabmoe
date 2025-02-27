@@ -6,7 +6,7 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler, QuantileTransfo
 from tabmoe.enums.utils import validate_enum
 from tabmoe.enums.data_processing import TaskType, FeatureType, NumPolicy
 from tabmoe.preprocessing.binary_encoder import BinaryEncoder
-from tabmoe.utils.device import get_device
+from tabmoe.utils.model import get_device
 
 
 class Dataset:
@@ -152,7 +152,7 @@ class Dataset:
 
         for attr in ["y_train", "y_val", "y_test"]:
             if getattr(self, attr) is not None:
-                dtype = torch.float32 if self.is_regression or self.n_classes == 2 else torch.long
+                dtype = torch.float32 if self.is_regression or self.is_binary else torch.long
                 setattr(self, attr, torch.tensor(getattr(self, attr), dtype=dtype, device=device))
 
     @property
@@ -185,3 +185,7 @@ class Dataset:
     @property
     def is_regression(self) -> bool:
         return self.task_type == TaskType.REGRESSION
+
+    @property
+    def is_binary(self) -> bool:
+        return self.task_type == TaskType.BINCLASS

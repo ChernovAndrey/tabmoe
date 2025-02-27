@@ -7,7 +7,7 @@ import rtdl_num_embeddings
 from tabmoe.preprocessing.dataset import Dataset
 from tabmoe.enums.utils import validate_enum
 from tabmoe.enums.model import GatingType, EmbeddingPolicy
-from tabmoe.utils.device import is_dataparallel_available
+from tabmoe.utils.model import is_dataparallel_available
 
 from .backbones import get_model_instance
 from .embeddings import PiecewiseLinearEmbeddings
@@ -23,7 +23,6 @@ class Model(nn.Module):
 
             backbone_parameters: dict,
             num_embeddings: None | dict = None,  # Embedding type
-            gating_type: Literal['standard', 'gumbel'] = 'gumbel',
             amp: bool = False,
     ) -> None:
         """
@@ -58,8 +57,6 @@ class Model(nn.Module):
         else:
             self.num_embedding_policy = None
 
-        self.gating_type = validate_enum(GatingType, gating_type)
-
         n_num_features = self.dataset.n_num_features
         if n_num_features == 0:
             self.num_module = None
@@ -84,35 +81,33 @@ class Model(nn.Module):
 
         self.d_cat = self.dataset.n_encoded_cat_features
         self.d_bin = self.dataset.n_bin_features
-        self.d_total = self.d_num + self.d_cat + self.d_bin
-        self.n_classes = self.dataset.n_classes
+        self.d_in = self.d_num + self.d_cat + self.d_bin
+        self.d_out = 1 if self.dataset.is_regression or self.dataset.is_binary else self.n_classes
 
-        print(f'output dimension:{self.n_classes}')
-        print(f'numeric dimension:{self.d_num}')
-        print(f'categorical dimension:{self.d_cat}')
-        print(f'binary dimension:{self.d_bin}')
-        print(f'total dimension:{self.d_total}')
+        print(f'input dimension to a network: {self.d_in}')
+        print(f'output dimension: {self.d_out}')
+        print(f'numeric dimension: {self.d_num}')
+        print(f'categorical dimension: {self.d_cat}')
+        print(f'binary dimension: {self.d_bin}')
 
-        assert self.d_total > 0, 'All d_num, d_cat and d_bin are zero, at least one should be positive'
+        assert self.d_in > 0, 'All d_num, d_cat and d_bin are zero, at least one should be positive'
 
-        self.d_out = 1 if (self.n_classes is None) or (self.n_classes == 2) else self.n_classes
-
-        self.backbone = get_model_instance(**backbone_parameters, d_in=self.d_total, d_out=self.d_out)
+        self.backbone = get_model_instance(**backbone_parameters, d_in=self.d_in, d_out=self.d_out)
 
         if is_dataparallel_available():
             self.to(self.dataset.device)  # TODO: it was never tested, but it should work :)
         else:
             self.to(self.dataset.device)
 
-    def run(self, X_num: torch.Tensor, X_cat: torch.Tensor, X_bin: torch.Tensor,
-            num_samples: int = 1, return_average: bool = True, ) -> Tensor:
+    def run(self, x_num: None | torch.Tensor = None, x_cat: None | torch.Tensor = None,
+            x_bin: None | torch.Tensor = None, num_samples: None | int = None, return_average: bool = True, ) -> Tensor:
         with torch.autocast(str(self.dataset.device), enabled=self.amp_enabled, dtype=self.amp_dtype):
-            return self(X_num, X_cat, X_bin, num_samples, return_average) \
+            return self(x_num, x_cat, x_bin, num_samples, return_average) \
                 .squeeze(-1).float()  # Remove the last dimension for regression predictions.
 
     def forward(
             self, x_num: None | Tensor = None, x_cat: None | Tensor = None, x_bin: None | Tensor = None,
-            num_samples: None | int = None, return_average: None | bool = None,
+            num_samples: None | int = None, return_average: bool = True,
     ) -> Tensor:  # TODO: pass the whole tensor as one or leave as it is?
         x = []
         if x_num is not None:

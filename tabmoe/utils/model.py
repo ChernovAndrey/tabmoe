@@ -1,5 +1,8 @@
 import os
 import torch
+from torch import nn
+def get_n_parameters(m: nn.Module):
+    return sum(x.numel() for x in m.parameters() if x.requires_grad)
 
 
 def get_device() -> torch.device:

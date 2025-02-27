@@ -1,8 +1,11 @@
 import torch
 from torch import nn, Tensor
 from torch.nn import functional as F
-
 from .utils import init_rsqrt_uniform_
+from tabmoe.enums.model import GatingType
+from tabmoe.enums.utils import validate_enum
+from typing import Literal
+
 
 class GumbelGatingNetwork(nn.Module):
     """
@@ -10,14 +13,13 @@ class GumbelGatingNetwork(nn.Module):
     We'll provide a method to sum the KL from both layers.
     """
 
-    def __init__(self, in_features=784, num_experts=3, tau=1.0, device='cuda'):
+    def __init__(self, in_features=784, num_experts=3, tau=1.0):
         super().__init__()
         self.lin = nn.Linear(in_features, num_experts)
         self.tau = tau
-        self.device = device
         print(f'tau={self.tau}')
 
-    def forward(self, x, num_samples: int, hard: bool = False):
+    def forward(self, x, num_samples: int = 1, hard: bool = False):
         logits = self.lin(x)  # shape: (batch, num_experts) or (num_samples, batch, num_experts)
         if num_samples < 2:
             # alpha = torch.softmax(logits, dim=-1)  # gating coefficients
@@ -36,40 +38,33 @@ class MoE(nn.Module):
             self,
             *,
             d_in: None | int = None,
-            d_out: None | int = None,
+            d_out: int,
             n_blocks: int,
             d_block: int,
             dropout: float,
             activation: str = 'ReLU',
             num_experts: None | int = None,
-            gating_type: str,  # ['standard' or 'bayesian'] #TODO: add Literal and enum
-            kl_factor: float = 1e-2,
+            gating_type: Literal['standard', 'gumbel'] = 'gumbel',
             d_block_per_expert: None | int = None,
-            default_num_samples: int = 5,
+            default_num_samples: int = 10,
             tau: float = 1.0,
     ) -> None:
         assert d_out is not None, "the output layer must be added to the MoE"
-        assert gating_type in ['standard', 'bayesian']
         super().__init__()
         if d_block_per_expert is not None:
             num_experts = d_block // d_block_per_expert
             print(f'num experts is set to :{num_experts}')
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        print("Using device:", device)
-        self.device = device
+
         self.n_blocks = n_blocks
-        self.kl_factor = kl_factor
         self.num_experts = num_experts
-        self.gating_type = gating_type
         self.default_num_samples = default_num_samples
-        print(f'gating type:{self.gating_type}')
-        print(f'default num samples:{self.default_num_samples}')
-        print(f'kl_factor: {kl_factor}')
+        print(f'default num samples: {self.default_num_samples}')
         d_first = d_block // num_experts if d_in is None else d_in
 
         self.stat_alpha_sum = None
         # Gating network
-        self.gating_type = gating_type
+        self.gating_type = validate_enum(GatingType, gating_type)
+        print(f'gating type: {self.gating_type}')
 
         self.Weights = nn.ParameterList()
         for i in range(n_blocks + 1):  # one more for the output layer!
@@ -82,20 +77,14 @@ class MoE(nn.Module):
 
         self.dropout = nn.Dropout(dropout)  # if self.gating_type == 'standard' else None
 
-        if self.gating_type == 'standard':
+        if self.gating_type == GatingType.STANDARD:
             self.gate = nn.Sequential(
                 nn.Linear(d_first, num_experts),
                 nn.Softmax(dim=-1)
             )
 
-        elif self.gating_type == 'bayesian':
-            # self.gate = BayesianGatingNetwork(
-            #     in_features=d_first,
-            #     num_experts=num_experts,
-            #     prior_std=gating_prior_std,
-            #     device=self.device,
-            # )
-            self.gate = GumbelGatingNetwork(d_first, num_experts, tau=tau, device=device)
+        elif self.gating_type == GatingType.GUMBEL:
+            self.gate = GumbelGatingNetwork(d_first, num_experts, tau=tau)
         else:
             raise ValueError(f'The gating type "{self.gating_type}" is not supported.')
 
@@ -106,8 +95,8 @@ class MoE(nn.Module):
            - Optionally store statistics,
            - Compute and return the weighted sum of expert outputs.
         If self.training is False (eval mode):
-           - Sample 10 alphas from gate,
-           - Compute expert outputs once (they're standard),
+           - By default sample 10 alphas from gate,
+           - Compute expert outputs once,
            - Average the weighted sums over those 10 alpha samples.
         """
         # print(f'num samples:{num_samples}')
