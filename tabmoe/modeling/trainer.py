@@ -55,23 +55,29 @@ class Trainer:
                     " ['accuracy', 'f1_macro', 'f1_micro']"
 
         # DataLoaders
+        X_train = torch.cat(
+            [X for X in (self.model.dataset.X_train_num, self.model.dataset.X_train_cat, self.model.dataset.X_train_bin)
+             if X is not None], dim=1)
+
         self.train_loader = DataLoader(
-            TensorDataset(self.model.dataset.X_train_num, self.model.dataset.X_train_cat,
-                          self.model.dataset.X_train_bin, self.model.dataset.y_train),
+            TensorDataset(X_train, self.model.dataset.y_train),
             batch_size=self.train_batch_size,
             shuffle=True if self.model.dataset.seed is None else torch.Generator().manual_seed(self.model.dataset.seed))
 
-        self.val_loader = DataLoader(
-            TensorDataset(self.model.dataset.X_val_num, self.model.dataset.X_val_cat, self.model.dataset.X_val_bin,
-                          self.model.dataset.y_val),
-            batch_size=self.eval_batch_size,
-            shuffle=False) if self.model.dataset.y_val is not None else None
+        if self.model.dataset.y_val is not None:
+            X_val = torch.cat(
+                [X for X in (self.model.dataset.X_val_num, self.model.dataset.X_val_cat, self.model.dataset.X_val_bin)
+                 if X is not None], dim=1)
+            self.val_loader = DataLoader(
+                TensorDataset(X_val, self.model.dataset.y_val), batch_size=self.eval_batch_size, shuffle=False)
 
-        self.test_loader = DataLoader(
-            TensorDataset(self.model.dataset.X_test_num, self.model.dataset.X_test_cat, self.model.dataset.X_test_bin,
-                          self.model.dataset.y_test),
-            batch_size=self.eval_batch_size,
-            shuffle=False) if self.model.dataset.y_test is not None else None
+        if self.model.dataset.y_test is not None:
+            X_test = torch.cat(
+                [X for X in
+                 (self.model.dataset.X_test_num, self.model.dataset.X_test_cat, self.model.dataset.X_test_bin)
+                 if X is not None], dim=1)
+            self.test_loader = DataLoader(
+                TensorDataset(X_test, self.model.dataset.y_test), batch_size=self.eval_batch_size, shuffle=False)
 
         self.n_parameters = get_n_parameters(self.model)
         print(f'number parameters:{self.n_parameters}')
@@ -95,8 +101,8 @@ class Trainer:
         while True:
             self.model.train()
             total_loss = 0.0
-            for X_num, X_cat, X_bin, y_batch in self.train_loader:
-                output = self.model.run(X_num, X_cat, X_bin)
+            for X, y_batch in self.train_loader:
+                output = self.model.run(X)
                 loss = self.loss_fn(output, y_batch)
                 # loss = self.calculate_loss(output, y_batch)
                 loss.backward()
@@ -145,8 +151,8 @@ class Trainer:
         all_y_true = []  # Store as a NumPy array
         all_y_pred = []
 
-        for X_num, X_cat, X_bin, y_batch in loader:
-            output = self.model.run(X_num, X_cat, X_bin, num_samples, return_average)
+        for X, y_batch in loader:
+            output = self.model.run(X, num_samples, return_average)
             print(output.shape)
             # Compute batch loss
             loss = self.loss_fn(output, y_batch)

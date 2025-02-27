@@ -6,7 +6,7 @@ import rtdl_num_embeddings
 
 from tabmoe.preprocessing.dataset import Dataset
 from tabmoe.enums.utils import validate_enum
-from tabmoe.enums.model import GatingType, EmbeddingPolicy
+from tabmoe.enums.model import EmbeddingPolicy
 from tabmoe.utils.model import is_dataparallel_available
 
 from .backbones import get_model_instance
@@ -99,28 +99,55 @@ class Model(nn.Module):
         else:
             self.to(self.dataset.device)
 
-    def run(self, x_num: None | torch.Tensor = None, x_cat: None | torch.Tensor = None,
-            x_bin: None | torch.Tensor = None, num_samples: None | int = None, return_average: bool = True, ) -> Tensor:
+    def run(self, x: torch.Tensor = None, num_samples: None | int = None, return_average: bool = True, ) -> Tensor:
         with torch.autocast(str(self.dataset.device), enabled=self.amp_enabled, dtype=self.amp_dtype):
-            return self(x_num, x_cat, x_bin, num_samples, return_average) \
+            return self(x, num_samples, return_average) \
                 .squeeze(-1).float()  # Remove the last dimension for regression predictions.
 
+    # def forward(
+    #         self, x_num: None | Tensor = None, x_cat: None | Tensor = None, x_bin: None | Tensor = None,
+    #         num_samples: None | int = None, return_average: bool = True,
+    # ) -> Tensor:  # TODO: pass the whole tensor as one or leave as it is?
+    #     x = []
+    #     if x_num is not None:
+    #         x.append(x_num if self.num_module is None else self.num_module(x_num))
+    #     if x_cat is not None:
+    #         x.append(x_cat)
+    #     if x_bin is not None:
+    #         x.append(x_bin)
+    #
+    #     x = torch.column_stack([x_.flatten(1, -1) for x_ in x])
+    #     if (return_average is not None) and (num_samples is not None):
+    #         x = self.backbone(x, num_samples=num_samples, return_average=return_average)
+    #     else:
+    #         x = self.backbone(x)
+    #
+    #     return x
+
     def forward(
-            self, x_num: None | Tensor = None, x_cat: None | Tensor = None, x_bin: None | Tensor = None,
-            num_samples: None | int = None, return_average: bool = True,
-    ) -> Tensor:  # TODO: pass the whole tensor as one or leave as it is?
-        x = []
-        if x_num is not None:
-            x.append(x_num if self.num_module is None else self.num_module(x_num))
-        if x_cat is not None:
-            x.append(x_cat)
-        if x_bin is not None:
-            x.append(x_bin)
+            self, x: Tensor, num_samples: None | int = None, return_average: bool = True
+    ) -> Tensor:
+        """
+        Splits concatenated input into numerical and other features.
+        - Processes numerical features via `num_module` if applicable.
+        - Concatenates all features again before passing to `backbone`.
+        """
+        n_num_features = self.dataset.n_num_features
+        # Extract numerical features (first `n_numerical_features` columns)
+        x_num = x[:, :n_num_features] if n_num_features > 0 else None
+        x_other = x[:, n_num_features:] if x.shape[1] > n_num_features else None
 
-        x = torch.column_stack([x_.flatten(1, -1) for x_ in x])
-        if (return_average is not None) and (num_samples is not None):
-            x = self.backbone(x, num_samples=num_samples, return_average=return_average)
+
+        # Apply num_module if available
+        if x_num is not None and self.num_module is not None:
+            x_num = self.num_module(x_num).flatten(1, -1)
+
+        # Concatenate processed numerical features with others
+        x_processed = torch.cat([x_num, x_other], dim=1) if x_other is not None else x_num
+        # Pass to backbone
+        if num_samples is not None and return_average is not None:
+            x_output = self.backbone(x_processed, num_samples=num_samples, return_average=return_average)
         else:
-            x = self.backbone(x)
+            x_output = self.backbone(x_processed)
 
-        return x
+        return x_output
