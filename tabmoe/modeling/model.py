@@ -95,7 +95,7 @@ class Model(nn.Module):
 
         assert self.d_total > 0, 'All d_num, d_cat and d_bin are zero, at least one should be positive'
 
-        self.d_out = 1 if self.n_classes is None else self.n_classes  # TODO: for binary classification make one output
+        self.d_out = 1 if (self.n_classes is None) or (self.n_classes == 2) else self.n_classes
 
         self.backbone = get_model_instance(**backbone_parameters, d_in=self.d_total, d_out=self.d_out)
 
@@ -104,8 +104,8 @@ class Model(nn.Module):
         else:
             self.to(self.dataset.device)
 
-    def apply_model(self, X_num: torch.Tensor, X_cat: torch.Tensor, X_bin: torch.Tensor,
-                    num_samples: int = 1, return_average: bool = True, ) -> Tensor:
+    def run(self, X_num: torch.Tensor, X_cat: torch.Tensor, X_bin: torch.Tensor,
+            num_samples: int = 1, return_average: bool = True, ) -> Tensor:
         with torch.autocast(str(self.dataset.device), enabled=self.amp_enabled, dtype=self.amp_dtype):
             return self(X_num, X_cat, X_bin, num_samples, return_average) \
                 .squeeze(-1).float()  # Remove the last dimension for regression predictions.

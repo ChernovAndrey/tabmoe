@@ -152,8 +152,9 @@ class Dataset:
 
         for attr in ["y_train", "y_val", "y_test"]:
             if getattr(self, attr) is not None:
-                dtype = torch.float32 if self.is_regression else torch.long
+                dtype = torch.float32 if self.is_regression or self.n_classes == 2 else torch.long
                 setattr(self, attr, torch.tensor(getattr(self, attr), dtype=dtype, device=device))
+
     @property
     def n_num_features(self) -> int:
         return len(self.num_indices)
