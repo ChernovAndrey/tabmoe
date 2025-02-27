@@ -6,16 +6,11 @@ import math
 import delu
 
 from .model import Model
-
-
-def get_optimizer(type: str, **kwargs) -> torch.optim.Optimizer:
-    Optimizer = getattr(torch.optim, type)
-    return Optimizer(**kwargs)
-
+from .optimization import get_optimizer, make_parameter_groups
 
 class Trainer:
-    def __int__(self, model: Model, optimizer_parameters: dict, train_batch_size: int,
-                eval_batch_size: None | int = 8192, gradient_clipping_norm: None | int = 1.0,
+    def __init__(self, model: Model, optimizer_parameters: dict, train_batch_size: int,
+                eval_batch_size: None | int = 64000, gradient_clipping_norm: None | int = 1.0,
                 patience: int = 16):
         # TODO: maybe add torch.compile in future
         assert optimizer_parameters.get('type',
@@ -27,7 +22,7 @@ class Trainer:
         self.eval_batch_size = eval_batch_size
         self.chunk_size = None  # TODO:?
 
-        self.optimizer = get_optimizer(**optimizer_parameters)
+        self.optimizer = get_optimizer(**optimizer_parameters, params=make_parameter_groups(model))
         self.gradient_clipping_norm = gradient_clipping_norm
         self.loss_fn = (
             nn.functional.mse_loss

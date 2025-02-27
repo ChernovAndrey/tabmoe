@@ -145,12 +145,15 @@ class Dataset:
     def _to_torch(self, device: None | str | torch.device) -> None:
         for attr in ["X_train_num", "X_train_cat", "X_train_bin",
                      "X_val_num", "X_val_cat", "X_val_bin",
-                     "X_test_num", "X_test_cat", "X_test_bin",
-                     "y_train", "y_val", "y_test"]:
+                     "X_test_num", "X_test_cat", "X_test_bin"]:
             setattr(self, attr,
                     torch.tensor(getattr(self, attr), dtype=torch.float32, device=device)
                     if getattr(self, attr) is not None else None)
 
+        for attr in ["y_train", "y_val", "y_test"]:
+            if getattr(self, attr) is not None:
+                dtype = torch.float32 if self.is_regression else torch.long
+                setattr(self, attr, torch.tensor(getattr(self, attr), dtype=dtype, device=device))
     @property
     def n_num_features(self) -> int:
         return len(self.num_indices)
@@ -176,7 +179,7 @@ class Dataset:
 
     @property
     def n_classes(self) -> None | int:
-        return None if self.task_type == TaskType.REGRESSION else np.unique(self.y_train)
+        return None if self.task_type == TaskType.REGRESSION else len(np.unique(self.y_train))
 
     @property
     def is_regression(self) -> bool:

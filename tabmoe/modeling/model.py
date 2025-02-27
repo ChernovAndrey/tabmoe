@@ -23,7 +23,8 @@ class Model(nn.Module):
 
             backbone_parameters: dict,
             num_embeddings: None | dict = None,  # Embedding type
-            gating_type: Literal['standard', 'gumbel'] = 'gumbel'
+            gating_type: Literal['standard', 'gumbel'] = 'gumbel',
+            amp: bool = False,
     ) -> None:
         """
 
@@ -52,7 +53,6 @@ class Model(nn.Module):
         # For FP16, the gradient scaler must be used.
         print(f'AMP enabled: {self.amp_enabled}')
 
-
         if num_embeddings is not None:
             self.num_embedding_policy = validate_enum(EmbeddingPolicy, num_embeddings.get('type', None))
         else:
@@ -74,7 +74,7 @@ class Model(nn.Module):
                     raise ValueError(
                         "Number of bins (`n_bins`) must be specified in num_embeddings when using PiecewiseLinearEmbeddings.")
                 self.bin_edges = rtdl_num_embeddings.compute_bins(
-                    torch.tensor(self.dataset.X_train_num, dtype=torch.float32), self.n_bins)
+                    torch.as_tensor(self.dataset.X_train_num, dtype=torch.float32), self.n_bins)
 
                 self.num_module = PiecewiseLinearEmbeddings(d_embedding=num_embeddings['d_embedding'],
                                                             bins=self.bin_edges)
@@ -106,8 +106,8 @@ class Model(nn.Module):
 
     def apply_model(self, X_num: torch.Tensor, X_cat: torch.Tensor, X_bin: torch.Tensor,
                     num_samples: int = 1, return_average: bool = True, ) -> Tensor:
-        with torch.autocast(self.model.dataset.device, enabled=self.amp_enabled, dtype=self.amp_dtype):
-            return self.model(X_num, X_cat, X_bin, num_samples, return_average) \
+        with torch.autocast(str(self.dataset.device), enabled=self.amp_enabled, dtype=self.amp_dtype):
+            return self(X_num, X_cat, X_bin, num_samples, return_average) \
                 .squeeze(-1).float()  # Remove the last dimension for regression predictions.
 
     def forward(
@@ -123,7 +123,6 @@ class Model(nn.Module):
             x.append(x_bin)
 
         x = torch.column_stack([x_.flatten(1, -1) for x_ in x])
-        print(x.shape)
         if (return_average is not None) and (num_samples is not None):
             x = self.backbone(x, num_samples=num_samples, return_average=return_average)
         else:
