@@ -7,6 +7,7 @@ from tabmoe.enums.utils import validate_enum
 from tabmoe.enums.data_processing import TaskType, FeatureType, NumPolicy
 from tabmoe.preprocessing.binary_encoder import BinaryEncoder
 from tabmoe.utils.model import get_device
+from tabmoe.utils.hyperparam_logger import HyperparamLogger
 
 
 class Dataset:
@@ -17,12 +18,16 @@ class Dataset:
                  X_val: Optional[np.array] = None, y_val: Optional[np.array] = None,
                  X_test: Optional[np.array] = None, y_test: Optional[np.array] = None,
                  seed: Optional[int] = None,
-                 device: None | str | torch.device = None):
+                 device: None | str | torch.device = None,
+                 input_logger: None | HyperparamLogger = None):
         if not isinstance(X_types, list):
             raise TypeError(f"Expected a list, but got {type(X_types).__name__}")
 
         assert X_train.shape[1] == len(X_types), "X type must be provided for every feature in X_train"
-        assert len(y_train.shape) == 1, "We support only 1D labels"
+        assert len(y_train.shape) == 1, "Only 1D labels are supported"
+
+        if input_logger is not None:
+            input_logger.log('dataset', X_types=X_types, num_policy=num_policy, seed=seed, device=device)
 
         self.task_type: TaskType = validate_enum(TaskType, task_type)
         self.x_types: list[FeatureType] = [validate_enum(FeatureType, value) for value in X_types]

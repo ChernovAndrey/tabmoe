@@ -41,8 +41,8 @@ def evaluate_predictions(y_true: np.ndarray, y_pred: np.ndarray, task_type: Task
     else:  # Regression
         metrics["mae"] = mean_absolute_error(y_true, y_pred)
         metrics["mse"] = mean_squared_error(y_true, y_pred)
-        metrics["rmse"] = np.sqrt(metrics["mse"])
+        metrics["rmse"] = np.sqrt(metrics["mse"]).item()
         metrics["r2"] = r2_score(y_true, y_pred)
 
-    metrics['score'] = metrics[score]
+    metrics['score'] = -metrics[score] if score in ['rmse'] else metrics[score]
     return metrics

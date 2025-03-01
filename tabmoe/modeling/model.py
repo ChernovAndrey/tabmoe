@@ -11,6 +11,7 @@ from tabmoe.utils.model import is_dataparallel_available
 
 from .backbones import get_model_instance
 from .embeddings import PiecewiseLinearEmbeddings
+from tabmoe.utils.hyperparam_logger import HyperparamLogger
 
 
 class Model(nn.Module):
@@ -24,6 +25,7 @@ class Model(nn.Module):
             backbone_parameters: dict,
             num_embeddings: None | dict = None,  # Embedding type
             amp: bool = False,
+            input_logger: None | HyperparamLogger = None
     ) -> None:
         """
 
@@ -37,6 +39,8 @@ class Model(nn.Module):
         assert backbone_parameters.get('type', None), "backbone_parameters dictionary must have a 'type' key"
 
         super().__init__()
+        if input_logger is not None:
+            input_logger.log('model', backbone=backbone_parameters, num_embeddings=num_embeddings, amp=amp)
         self.dataset = dataset
 
         # Use it with caution; there is no need to use AMP on small datasets.
@@ -136,7 +140,6 @@ class Model(nn.Module):
         # Extract numerical features (first `n_numerical_features` columns)
         x_num = x[:, :n_num_features] if n_num_features > 0 else None
         x_other = x[:, n_num_features:] if x.shape[1] > n_num_features else None
-
 
         # Apply num_module if available
         if x_num is not None and self.num_module is not None:
